@@ -1,0 +1,38 @@
+{{define "error.html"}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Error {{.StatusCode}} — Groupie Tracker</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <header class="site-header">
+        <div class="container">
+            <a href="/" class="logo">
+                <span class="logo-icon">🎵</span>
+                <span class="logo-text">Groupie Tracker</span>
+            </a>
+        </div>
+    </header>
+
+    <main class="container error-page">
+        <div class="error-content" id="error-content">
+            <h1 class="error-code">{{.StatusCode}}</h1>
+            <p class="error-message">{{.Message}}</p>
+            <a href="/" class="error-home-link" id="error-home-link">← Back to Home</a>
+        </div>
+    </main>
+
+    <footer class="site-footer">
+        <div class="container">
+            <p>&copy; 2024 Groupie Tracker. Data from Groupie Trackers API.</p>
+        </div>
+    </footer>
+</body>
+</html>
+{{end}}

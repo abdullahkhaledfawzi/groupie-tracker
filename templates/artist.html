@@ -1,0 +1,97 @@
+{{define "artist.html"}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="{{.Artist.Name}} - View members, concert locations and dates.">
+    <title>{{.Artist.Name}} — Groupie Tracker</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <header class="site-header">
+        <div class="container">
+            <a href="/" class="logo">
+                <span class="logo-icon">🎵</span>
+                <span class="logo-text">Groupie Tracker</span>
+            </a>
+        </div>
+    </header>
+
+    <main class="container artist-page">
+        <!-- Back navigation -->
+        <a href="/" class="back-link" id="back-link">← Back to All Artists</a>
+
+        <!-- Artist Detail Card (Card visualization) -->
+        <section class="artist-hero" id="artist-hero">
+            <div class="artist-image-wrapper">
+                <img src="{{.Artist.Image}}" alt="{{.Artist.Name}}" class="artist-image" width="400" height="400">
+            </div>
+            <div class="artist-details">
+                <h1 class="artist-name">{{.Artist.Name}}</h1>
+                <div class="artist-meta">
+                    <div class="meta-item">
+                        <span class="meta-label">Active Since</span>
+                        <span class="meta-value">{{.Artist.CreationDate}}</span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">First Album</span>
+                        <span class="meta-value">{{.Artist.FirstAlbum}}</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Members List (List visualization) -->
+        <section class="members-section" id="members-section">
+            <h2 class="section-title">Members</h2>
+            <ul class="members-list">
+                {{range .Artist.Members}}
+                <li class="member-item">{{.}}</li>
+                {{end}}
+            </ul>
+        </section>
+
+        <!-- Concerts Table (Table visualization) -->
+        <section class="concerts-section" id="concerts-section">
+            <h2 class="section-title">Concert History</h2>
+            {{if .Relation.DatesLocations}}
+            <div class="table-wrapper">
+                <table class="concerts-table">
+                    <thead>
+                        <tr>
+                            <th>Location</th>
+                            <th>Dates</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {{range $location, $dates := .Relation.DatesLocations}}
+                        <tr>
+                            <td class="location-cell">📍 {{formatLocation $location}}</td>
+                            <td class="dates-cell">
+                                {{range $dates}}
+                                <span class="date-tag">{{.}}</span>
+                                {{end}}
+                            </td>
+                        </tr>
+                        {{end}}
+                    </tbody>
+                </table>
+            </div>
+            {{else}}
+            <p class="no-data">No concert data available.</p>
+            {{end}}
+        </section>
+    </main>
+
+    <footer class="site-footer">
+        <div class="container">
+            <p>&copy; 2024 Groupie Tracker. Data from Groupie Trackers API.</p>
+        </div>
+    </footer>
+</body>
+</html>
+{{end}}
