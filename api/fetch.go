@@ -82,7 +82,7 @@ func FetchRelation(id int) (models.RelationData, error) {
 
 // fetchJSON is a DRY helper that performs an HTTP GET request
 // and decodes the JSON response body into the provided target.
-func fetchJSON(url string, target interface{}) error {
+func fetchJSON(url string, target any) error {
 	resp, err := httpClient.Get(url)
 	if err != nil {
 		return fmt.Errorf("HTTP GET %s: %w", url, err)
