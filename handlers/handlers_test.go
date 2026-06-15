@@ -6,20 +6,45 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
+	"groupie-tracker/api"
 	"groupie-tracker/models"
 )
 
-// TestMain sets up the test environment by changing to the project root
-// so that template files can be found by ParseGlob("templates/*.html").
+// testArtists is the fake dataset used across all handler tests.
+var testArtists = []models.Artist{
+	{ID: 1, Name: "Queen", Image: "/static/queen.jpg", Members: []string{"Freddie Mercury", "Brian May"}, CreationDate: 1970, FirstAlbum: "14-12-1973"},
+	{ID: 2, Name: "SOJA", Image: "/static/soja.jpg", Members: []string{"Jacob Hemphill"}, CreationDate: 1997, FirstAlbum: "05-09-2000"},
+	{ID: 3, Name: "Pink Floyd", Image: "/static/pinkfloyd.jpg", Members: []string{"Roger Waters", "David Gilmour"}, CreationDate: 1965, FirstAlbum: "05-08-1967"},
+}
+
+// testRelation is the fake relation data for artist ID 1.
+var testRelation = models.RelationData{
+	ID: 1,
+	DatesLocations: map[string][]string{
+		"london-uk":    {"23-08-2019"},
+		"new_york-usa": {"10-12-2019"},
+	},
+}
+
+// TestMain sets up the test environment: changes to the project root so
+// templates can be found, seeds the API caches with fake data, and runs tests.
 func TestMain(m *testing.M) {
 	// Walk up from handlers/ to project root.
 	projectRoot, _ := filepath.Abs("..")
 	os.Chdir(projectRoot)
 	InitTemplates()
-	os.Exit(m.Run())
+
+	// Seed API caches so handlers never call the real external API.
+	api.SeedArtistCache(testArtists)
+	api.SeedRelationCache(1, testRelation)
+
+	code := m.Run()
+
+	// Clean up caches after all tests.
+	api.ResetCaches()
+	os.Exit(code)
 }
 
 // TestHomeHandler verifies the home page returns 200 and contains expected HTML.
@@ -34,10 +59,15 @@ func TestHomeHandler(t *testing.T) {
 	}
 
 	body := rec.Body.String()
-	if !strings.Contains(body, "Groupie Tracker") {
+	if len(body) == 0 {
+		t.Error("HomeHandler response body is empty")
+	}
+	// Should contain the site name somewhere in the HTML.
+	if !contains(body, "Groupie Tracker") {
 		t.Error("HomeHandler response does not contain 'Groupie Tracker'")
 	}
-	if !strings.Contains(body, "Queen") {
+	// Should contain our seeded artist name.
+	if !contains(body, "Queen") {
 		t.Error("HomeHandler response does not contain 'Queen'")
 	}
 }
@@ -78,7 +108,7 @@ func TestArtistHandlerValid(t *testing.T) {
 	}
 
 	body := rec.Body.String()
-	if !strings.Contains(body, "Queen") {
+	if !contains(body, "Queen") {
 		t.Error("ArtistHandler response for id=1 does not contain 'Queen'")
 	}
 }
@@ -107,6 +137,31 @@ func TestArtistHandlerInvalidID(t *testing.T) {
 	}
 }
 
+// TestArtistHandlerNegativeID verifies that a negative ID returns 404
+// immediately via the lower-bound check (no need to iterate all artists).
+func TestArtistHandlerNegativeID(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/artist?id=-5", nil)
+	rec := httptest.NewRecorder()
+
+	ArtistHandler(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("ArtistHandler GET /artist?id=-5 status = %d, want %d", rec.Code, http.StatusNotFound)
+	}
+}
+
+// TestArtistHandlerZeroID verifies that ID=0 returns 404.
+func TestArtistHandlerZeroID(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/artist?id=0", nil)
+	rec := httptest.NewRecorder()
+
+	ArtistHandler(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("ArtistHandler GET /artist?id=0 status = %d, want %d", rec.Code, http.StatusNotFound)
+	}
+}
+
 // TestArtistHandlerNotFound verifies out-of-range ID returns 404.
 func TestArtistHandlerNotFound(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/artist?id=9999", nil)
@@ -116,6 +171,18 @@ func TestArtistHandlerNotFound(t *testing.T) {
 
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("ArtistHandler GET /artist?id=9999 status = %d, want %d", rec.Code, http.StatusNotFound)
+	}
+}
+
+// TestArtistHandlerMethodNotAllowed verifies POST to artist page returns 405.
+func TestArtistHandlerMethodNotAllowed(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/artist?id=1", nil)
+	rec := httptest.NewRecorder()
+
+	ArtistHandler(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Errorf("ArtistHandler POST /artist?id=1 status = %d, want %d", rec.Code, http.StatusMethodNotAllowed)
 	}
 }
 
@@ -131,7 +198,7 @@ func TestSearchHandler(t *testing.T) {
 	}
 
 	contentType := rec.Header().Get("Content-Type")
-	if !strings.Contains(contentType, "application/json") {
+	if !contains(contentType, "application/json") {
 		t.Errorf("SearchHandler Content-Type = %q, want application/json", contentType)
 	}
 
@@ -156,7 +223,28 @@ func TestSearchHandler(t *testing.T) {
 	}
 }
 
-// TestSearchHandlerEmpty verifies empty query returns all artists.
+// TestSearchHandlerNoMatch verifies that a query with no matches returns an empty array.
+func TestSearchHandlerNoMatch(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/search?q=zzzznonexistent", nil)
+	rec := httptest.NewRecorder()
+
+	SearchHandler(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("SearchHandler status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	var results []models.Artist
+	if err := json.NewDecoder(rec.Body).Decode(&results); err != nil {
+		t.Fatalf("SearchHandler response is not valid JSON: %v", err)
+	}
+
+	if len(results) != 0 {
+		t.Errorf("SearchHandler for 'zzzznonexistent' returned %d results, want 0", len(results))
+	}
+}
+
+// TestSearchHandlerEmpty verifies empty query returns all seeded artists.
 func TestSearchHandlerEmpty(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/search?q=", nil)
 	rec := httptest.NewRecorder()
@@ -172,8 +260,20 @@ func TestSearchHandlerEmpty(t *testing.T) {
 		t.Fatalf("SearchHandler response is not valid JSON: %v", err)
 	}
 
-	if len(results) != 52 {
-		t.Errorf("SearchHandler empty query returned %d artists, want 52", len(results))
+	if len(results) != len(testArtists) {
+		t.Errorf("SearchHandler empty query returned %d artists, want %d", len(results), len(testArtists))
+	}
+}
+
+// TestSearchHandlerMethodNotAllowed verifies POST to search returns 405.
+func TestSearchHandlerMethodNotAllowed(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/search?q=test", nil)
+	rec := httptest.NewRecorder()
+
+	SearchHandler(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Errorf("SearchHandler POST status = %d, want %d", rec.Code, http.StatusMethodNotAllowed)
 	}
 }
 
@@ -197,4 +297,19 @@ func TestFormatLocation(t *testing.T) {
 			t.Errorf("FormatLocation(%q) = %q, want %q", tt.input, got, tt.want)
 		}
 	}
+}
+
+// contains is a helper to check if a string contains a substring.
+func contains(s, substr string) bool {
+	return len(s) >= len(substr) && (s == substr || len(substr) == 0 ||
+		findSubstring(s, substr))
+}
+
+func findSubstring(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
 }

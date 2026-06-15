@@ -80,6 +80,13 @@ func ArtistHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Quick lower-bound check: IDs start at 1.
+	// We intentionally skip an upper-bound check so the API can grow beyond 52 artists.
+	if id < 1 {
+		renderError(w, http.StatusNotFound, "Artist Not Found")
+		return
+	}
+
 	// Fetch all artists to find the one matching the requested ID.
 	artists, err := api.GetArtists()
 	if err != nil {
