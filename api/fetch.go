@@ -36,16 +36,11 @@ var (
 	artistCacheTime time.Time
 )
 
-// relationCacheEntry stores a single cached relation with its fetch time.
-type relationCacheEntry struct {
-	data      models.RelationData
-	fetchedAt time.Time
-}
-
-// In-memory cache for relation data, keyed by artist ID.
+// In-memory cache for all relation data, keyed by artist ID.
 var (
-	relationCache   = make(map[int]relationCacheEntry)
-	relationCacheMu sync.RWMutex
+	relationCache     map[int]models.RelationData
+	relationCacheMu   sync.RWMutex
+	relationCacheTime time.Time
 )
 
 // GetArtists returns all artists, using a cached version if available and fresh.
@@ -95,30 +90,52 @@ func fetchArtists() ([]models.Artist, error) {
 	return artists, nil
 }
 
-// FetchRelation retrieves the relation data (location→dates mapping)
-// for a specific artist by their ID, using a 5-minute per-artist cache.
-// Uses RLock first so multiple goroutines can read concurrently.
-func FetchRelation(id int) (models.RelationData, error) {
-	// Fast path: read lock for cache hit.
+// getRelations returns all relations, using a cached version if available and fresh.
+func getRelations() (map[int]models.RelationData, error) {
 	relationCacheMu.RLock()
-	if entry, ok := relationCache[id]; ok && time.Since(entry.fetchedAt) < cacheDuration {
+	if relationCache != nil && time.Since(relationCacheTime) < cacheDuration {
 		defer relationCacheMu.RUnlock()
-		return entry.data, nil
+		return relationCache, nil
 	}
 	relationCacheMu.RUnlock()
 
-	// Slow path: fetch from API and update cache.
-	url := fmt.Sprintf("%s/%d", relationURL, id)
-	var relation models.RelationData
-	if err := fetchJSON(url, &relation); err != nil {
-		return relation, fmt.Errorf("FetchRelation(%d): %w", id, err)
+	relationCacheMu.Lock()
+	defer relationCacheMu.Unlock()
+
+	if relationCache != nil && time.Since(relationCacheTime) < cacheDuration {
+		return relationCache, nil
 	}
 
-	relationCacheMu.Lock()
-	relationCache[id] = relationCacheEntry{data: relation, fetchedAt: time.Now()}
-	relationCacheMu.Unlock()
+	var response struct {
+		Index []models.RelationData `json:"index"`
+	}
+	if err := fetchJSON(relationURL, &response); err != nil {
+		return nil, fmt.Errorf("fetchAllRelations: %w", err)
+	}
 
-	return relation, nil
+	relationsMap := make(map[int]models.RelationData)
+	for _, rel := range response.Index {
+		relationsMap[rel.ID] = rel
+	}
+
+	relationCache = relationsMap
+	relationCacheTime = time.Now()
+	return relationsMap, nil
+}
+
+// FetchRelation retrieves the relation data (location→dates mapping)
+// for a specific artist by their ID, using a 5-minute global cache.
+func FetchRelation(id int) (models.RelationData, error) {
+	relations, err := getRelations()
+	if err != nil {
+		return models.RelationData{}, err
+	}
+
+	rel, ok := relations[id]
+	if !ok {
+		return models.RelationData{}, fmt.Errorf("FetchRelation(%d): not found", id)
+	}
+	return rel, nil
 }
 
 // fetchJSON is a DRY helper that performs an HTTP GET request
@@ -155,7 +172,11 @@ func SeedArtistCache(artists []models.Artist) {
 func SeedRelationCache(id int, data models.RelationData) {
 	relationCacheMu.Lock()
 	defer relationCacheMu.Unlock()
-	relationCache[id] = relationCacheEntry{data: data, fetchedAt: time.Now()}
+	if relationCache == nil {
+		relationCache = make(map[int]models.RelationData)
+	}
+	relationCache[id] = data
+	relationCacheTime = time.Now()
 }
 
 // ResetCaches clears both the artist and relation caches.
@@ -167,6 +188,7 @@ func ResetCaches() {
 	artistCacheMu.Unlock()
 
 	relationCacheMu.Lock()
-	relationCache = make(map[int]relationCacheEntry)
+	relationCache = nil
+	relationCacheTime = time.Time{}
 	relationCacheMu.Unlock()
 }

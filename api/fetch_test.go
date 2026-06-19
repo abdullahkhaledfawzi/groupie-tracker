@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -37,13 +38,14 @@ func newFakeServer() *httptest.Server {
 		json.NewEncoder(w).Encode(fakeArtists)
 	})
 
-	mux.HandleFunc("/relation/1", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/relation", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(fakeRelation)
-	})
-
-	mux.HandleFunc("/relation/99999", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusNotFound)
+		response := struct {
+			Index []models.RelationData `json:"index"`
+		}{
+			Index: []models.RelationData{fakeRelation},
+		}
+		json.NewEncoder(w).Encode(response)
 	})
 
 	return httptest.NewServer(mux)
@@ -87,8 +89,6 @@ func setupFakeAPI(t *testing.T) func() {
 	return func() {
 		server.Close()
 		httpClient = origClient
-		_ = origArtistsURL
-		_ = origRelationURL
 		ResetCaches()
 	}
 }
@@ -107,8 +107,6 @@ func (u *urlRewriter) RoundTrip(req *http.Request) (*http.Response, error) {
 	url := req.URL.String()
 	if len(url) >= len(u.realArtists) && url[:len(u.realArtists)] == u.realArtists {
 		req = req.Clone(req.Context())
-		req.URL.Scheme = "http"
-		req.URL.Host = req.URL.Host // will be overwritten below
 		newURL := u.fakeBase + "/artists" + url[len(u.realArtists):]
 		parsed, _ := req.URL.Parse(newURL)
 		req.URL = parsed
@@ -123,6 +121,13 @@ func (u *urlRewriter) RoundTrip(req *http.Request) (*http.Response, error) {
 		transport = http.DefaultTransport
 	}
 	return transport.RoundTrip(req)
+}
+
+// errorTransport is used in cache tests to ensure no network requests are made.
+type errorTransport struct{}
+
+func (errorTransport) RoundTrip(*http.Request) (*http.Response, error) {
+	return nil, errors.New("unexpected network request: should have used cache")
 }
 
 // TestGetArtists verifies that GetArtists returns the expected artists
@@ -161,6 +166,9 @@ func TestGetArtistsCache(t *testing.T) {
 	if err != nil {
 		t.Fatalf("First GetArtists() call error: %v", err)
 	}
+
+	// Disable network requests to guarantee the next call uses the cache.
+	httpClient = &http.Client{Transport: errorTransport{}}
 
 	// Second call should come from cache (even if we stopped the server it would work).
 	artists, err := GetArtists()
@@ -211,6 +219,9 @@ func TestFetchRelationCache(t *testing.T) {
 	if err != nil {
 		t.Fatalf("First FetchRelation(1) error: %v", err)
 	}
+
+	// Disable network requests to guarantee the next call uses the cache.
+	httpClient = &http.Client{Transport: errorTransport{}}
 
 	// Second call should come from cache.
 	relation, err := FetchRelation(1)
@@ -284,9 +295,11 @@ func TestCacheExpiry(t *testing.T) {
 		t.Fatalf("GetArtists() error: %v", err)
 	}
 
-	// Force the cache to expire by backdating it.
+	// Force the cache to expire by backdating it, and poison the cached data
+	// to ensure we can detect if it's incorrectly returned.
 	artistCacheMu.Lock()
 	artistCacheTime = time.Now().Add(-10 * time.Minute)
+	cachedArtists[0].Name = "Poisoned Cache Data"
 	artistCacheMu.Unlock()
 
 	// Next call should re-fetch from the fake server (not fail).
@@ -294,6 +307,12 @@ func TestCacheExpiry(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetArtists() after cache expiry error: %v", err)
 	}
+
+	// If the expiry check failed, it would return the poisoned cache data.
+	if artists[0].Name == "Poisoned Cache Data" {
+		t.Fatal("GetArtists() returned expired cache data instead of fetching fresh data")
+	}
+
 	if len(artists) != len(fakeArtists) {
 		t.Errorf("GetArtists() after expiry returned %d artists, want %d", len(artists), len(fakeArtists))
 	}

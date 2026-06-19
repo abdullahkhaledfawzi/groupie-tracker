@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"groupie-tracker/api"
@@ -63,11 +64,11 @@ func TestHomeHandler(t *testing.T) {
 		t.Error("HomeHandler response body is empty")
 	}
 	// Should contain the site name somewhere in the HTML.
-	if !contains(body, "Groupie Tracker") {
+	if !strings.Contains(body, "Groupie Tracker") {
 		t.Error("HomeHandler response does not contain 'Groupie Tracker'")
 	}
 	// Should contain our seeded artist name.
-	if !contains(body, "Queen") {
+	if !strings.Contains(body, "Queen") {
 		t.Error("HomeHandler response does not contain 'Queen'")
 	}
 }
@@ -108,7 +109,7 @@ func TestArtistHandlerValid(t *testing.T) {
 	}
 
 	body := rec.Body.String()
-	if !contains(body, "Queen") {
+	if !strings.Contains(body, "Queen") {
 		t.Error("ArtistHandler response for id=1 does not contain 'Queen'")
 	}
 }
@@ -198,7 +199,7 @@ func TestSearchHandler(t *testing.T) {
 	}
 
 	contentType := rec.Header().Get("Content-Type")
-	if !contains(contentType, "application/json") {
+	if !strings.Contains(contentType, "application/json") {
 		t.Errorf("SearchHandler Content-Type = %q, want application/json", contentType)
 	}
 
@@ -299,17 +300,4 @@ func TestFormatLocation(t *testing.T) {
 	}
 }
 
-// contains is a helper to check if a string contains a substring.
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(substr) == 0 ||
-		findSubstring(s, substr))
-}
 
-func findSubstring(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
-}
