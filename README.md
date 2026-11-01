@@ -4,6 +4,7 @@
 [![Standard Library Only](https://img.shields.io/badge/dependencies-0-brightgreen)](#)
 [![Docker](https://img.shields.io/badge/Docker-2496ED?logo=docker&logoColor=white)](#)
 [![Tests](https://img.shields.io/badge/tests-go%20test%20./...-brightgreen)](#)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 A web application built entirely in **Go** (standard library only) that consumes the [Groupie Trackers API](https://groupietrackers.herokuapp.com/api) to display information about bands and artists, including their members, concert locations, and dates.
 
@@ -164,5 +165,9 @@ the trade-offs were conscious choices, not blind spots.
 Abdallrhman khalid, Abdullah Khaled, yasser ahmed zaki and Amr Younes
 
 ---
+
+## 📄 License
+
+Released under the [MIT License](LICENSE) — free to use, study, modify and share.
 
 Created by Abdullah Khaled from Egypt with ❤️
