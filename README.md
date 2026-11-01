@@ -160,12 +160,6 @@ kept evolving:
 None of these are on the roadmap right now — they're noted here so it's clear
 the trade-offs were conscious choices, not blind spots.
 
-## 👥 Author
-
-Abdallrhman khalid, Abdullah Khaled, yasser ahmed zaki and Amr Younes
-
----
-
 ## 📄 License
 
 Released under the [MIT License](LICENSE) — free to use, study, modify and share.
